@@ -1,380 +1,420 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
-import { ChapterContent } from './components/ChapterContent';
-import { ArchitectureDiagram } from './components/ArchitectureDiagram';
+import { HomePage } from './components/HomePage';
+import { CourseViewer } from './components/CourseViewer';
+import { GitCommandViewer } from './components/GitCommandViewer';
+import { GitCommandsExplained } from './components/GitCommandsExplained';
+import { UploadToGithubTutorial } from './components/UploadToGithubTutorial';
+import { CssPropertiesExplained } from './components/CssPropertiesExplained';
+import { GitTerminalSimulator } from './components/GitTerminalSimulator';
+import { CssVisualPlayground } from './components/CssVisualPlayground';
 import { CodePlayground } from './components/CodePlayground';
-import { InteractiveQuiz } from './components/InteractiveQuiz';
+import { InteractiveQuizSystem } from './components/InteractiveQuizSystem';
+import { LearningDashboard } from './components/LearningDashboard';
+import { PracticalProjects } from './components/PracticalProjects';
 import { PdfDocumentView } from './components/PdfDocumentView';
-import { CHAPTERS, GUIDE_METADATA } from './data/guideContent';
-import {
-  FileText,
-  BookOpen,
-  Terminal,
-  HelpCircle,
-  Printer,
-  Sparkles,
-  ArrowLeft,
-  CheckCircle2,
-  Share2,
-  Code2
-} from 'lucide-react';
+import { SearchModal } from './components/SearchModal';
+import { Language, translations } from './data/translations';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('overview');
-  const [viewMode, setViewMode] = useState<'guide' | 'pdf-view' | 'playground' | 'quiz'>('guide');
-  const [darkMode, setDarkMode] = useState<boolean>(true);
+  // 1. Language state with localStorage persistence (supports en, fr, ar)
+  const [lang, setLang] = useState<Language>(() => {
+    const saved = localStorage.getItem('webdev_lang');
+    if (saved === 'en' || saved === 'fr' || saved === 'ar') return saved;
+    return 'ar';
+  });
 
-  // Sync dark class on document element
+  // 2. Dark mode state with localStorage persistence
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('webdev_theme');
+    return saved === 'light' ? false : true;
+  });
+
+  // 3. Navigation View
+  const [currentView, setCurrentView] = useState<string>('home');
+  const [activeLessonId, setActiveLessonId] = useState<string | undefined>();
+  const [playgroundStarterCode, setPlaygroundStarterCode] = useState<{ html?: string; css?: string } | undefined>();
+
+  // 4. Learning Progress States
+  const [completedLessons, setCompletedLessons] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('webdev_completed');
+      return saved ? JSON.parse(saved) : ['html-01', 'html-02'];
+    } catch {
+      return ['html-01', 'html-02'];
+    }
+  });
+
+  const [bookmarkedLessons, setBookmarkedLessons] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('webdev_bookmarks');
+      return saved ? JSON.parse(saved) : ['html-13', 'css-18'];
+    } catch {
+      return ['html-13', 'css-18'];
+    }
+  });
+
+  const [quizScores, setQuizScores] = useState<{ score: number; total: number; tech: string; date: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem('webdev_quiz_scores');
+      return saved ? JSON.parse(saved) : [
+        { score: 14, total: 16, tech: 'html', date: '2026-11-05' }
+      ];
+    } catch {
+      return [];
+    }
+  });
+
+  // 5. Search Modal State
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  // Sync RTL / LTR direction and document title
+  useEffect(() => {
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = lang;
+    localStorage.setItem('webdev_lang', lang);
+  }, [lang]);
+
+  // Sync Dark mode
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
+      localStorage.setItem('webdev_theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
+      localStorage.setItem('webdev_theme', 'light');
     }
   }, [darkMode]);
 
-  const handlePrint = () => {
-    window.print();
+  // Sync Completed lessons to storage
+  useEffect(() => {
+    localStorage.setItem('webdev_completed', JSON.stringify(completedLessons));
+  }, [completedLessons]);
+
+  // Sync Bookmarks to storage
+  useEffect(() => {
+    localStorage.setItem('webdev_bookmarks', JSON.stringify(bookmarkedLessons));
+  }, [bookmarkedLessons]);
+
+  // Sync Quiz Scores
+  useEffect(() => {
+    localStorage.setItem('webdev_quiz_scores', JSON.stringify(quizScores));
+  }, [quizScores]);
+
+  // Keyboard shortcut Ctrl+K for search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Handlers
+  const handleSelectLanguage = (newLang: Language) => {
+    setLang(newLang);
   };
 
-  const handleSelectTab = (tabId: string) => {
-    if (tabId === 'quiz') {
-      setViewMode('quiz');
-    } else if (tabId === 'playground') {
-      setViewMode('playground');
+  const handleToggleTheme = () => {
+    setDarkMode((prev) => !prev);
+  };
+
+  const handleToggleComplete = (lessonId: string) => {
+    setCompletedLessons((prev) =>
+      prev.includes(lessonId) ? prev.filter((id) => id !== lessonId) : [...prev, lessonId]
+    );
+  };
+
+  const handleToggleBookmark = (lessonId: string) => {
+    setBookmarkedLessons((prev) =>
+      prev.includes(lessonId) ? prev.filter((id) => id !== lessonId) : [...prev, lessonId]
+    );
+  };
+
+  const handleSaveQuizResult = (score: number, total: number, tech: string) => {
+    const newEntry = {
+      score,
+      total,
+      tech,
+      date: new Date().toISOString().split('T')[0]
+    };
+    setQuizScores((prev) => [...prev, newEntry]);
+  };
+
+  const handleOpenInPlayground = (code: { html?: string; css?: string }) => {
+    setPlaygroundStarterCode(code);
+    setCurrentView('playground');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleNavigateToLesson = (type: 'html' | 'css' | 'git' | 'github', lessonId?: string) => {
+    setActiveLessonId(lessonId);
+    if (type === 'html') setCurrentView('html-course');
+    else if (type === 'css') setCurrentView('css-course');
+    else if (type === 'git') setCurrentView('git-course');
+    else setCurrentView('github-course');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSearchNavigate = (type: any, itemId?: string) => {
+    if (type === 'html' || type === 'css' || type === 'git' || type === 'github') {
+      handleNavigateToLesson(type, itemId);
     } else {
-      setViewMode('guide');
-      setActiveTab(tabId);
-      // If jumping to a chapter section, scroll to it
-      if (tabId !== 'overview') {
-        const el = document.getElementById(tabId);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth' });
-        }
-      }
+      setCurrentView(type);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
+  const handleClearProgress = () => {
+    const msg =
+      lang === 'ar'
+        ? 'هل أنت متأكد من تصفير سجل التقدم؟'
+        : lang === 'fr'
+        ? 'Réinitialiser votre progression ?'
+        : 'Reset demo progress?';
+    if (window.confirm(msg)) {
+      setCompletedLessons([]);
+      setBookmarkedLessons([]);
+      setQuizScores([]);
+      localStorage.removeItem('webdev_completed');
+      localStorage.removeItem('webdev_bookmarks');
+      localStorage.removeItem('webdev_quiz_scores');
+    }
+  };
+
+  const t = translations[lang];
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans transition-colors antialiased selection:bg-cyan-500/30 selection:text-white">
       {/* Top Bar Header */}
       <Header
-        activeTab={activeTab}
-        onSelectTab={handleSelectTab}
-        onPrint={handlePrint}
+        currentView={currentView}
+        onSelectView={(view) => {
+          setCurrentView(view);
+          setActiveLessonId(undefined);
+        }}
+        lang={lang}
+        onSelectLanguage={handleSelectLanguage}
         darkMode={darkMode}
-        onToggleTheme={() => setDarkMode(!darkMode)}
+        onToggleTheme={handleToggleTheme}
+        onOpenSearch={() => setIsSearchOpen(true)}
+        onPrintPdf={() => setCurrentView('pdf-view')}
       />
 
-      {/* Main Container */}
+      {/* Main Dynamic View Area */}
       <main className="flex-1">
-        {/* Hero Section (Hidden during print) */}
-        <section className="no-print border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 py-10 sm:py-14">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-              
-              {/* Text Info */}
-              <div className="lg:col-span-7 space-y-4">
-                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                  <span className="font-semibold text-sky-600 dark:text-sky-400">الدليل الأكاديمي الشامل</span>
-                  <span>·</span>
-                  <span>HTML, CSS, Git, GitHub & Portfolio</span>
-                  <span>·</span>
-                  <span>جاهز للطباعة كـ PDF</span>
-                </div>
-
-                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-slate-950 dark:text-white tracking-tight leading-tight">
-                  مرجعك المتكامل لاحتراف أدوات الويب وبناء البورتفوليو
-                </h1>
-
-                <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl">
-                  شرح مبسط وعميق باللغة العربية والدارجة المغربية: الفرق الجذري بين HTML و CSS، الفرق بين Git و GitHub، مخطط دورة العمل الحقيقية، أمثلة كود حية، واختبار Quiz مع التصحيح والتعليل.
-                </p>
-
-                {/* Primary Action Buttons */}
-                <div className="flex flex-wrap items-center gap-3 pt-2">
-                  <button
-                    onClick={() => {
-                      setViewMode('pdf-view');
-                      window.scrollTo({ top: 400, behavior: 'smooth' });
-                    }}
-                    className="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white rounded-lg shadow-sm transition-all cursor-pointer"
-                  >
-                    <Printer className="w-4 h-4" />
-                    <span>معاينة وتحميل PDF (Print Guide)</span>
-                  </button>
-
-                  <button
-                    onClick={() => setViewMode('playground')}
-                    className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white rounded-lg transition-all cursor-pointer"
-                  >
-                    <Code2 className="w-4 h-4 text-sky-500" />
-                    <span>محرر الكود المباشر</span>
-                  </button>
-
-                  <button
-                    onClick={() => setViewMode('quiz')}
-                    className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white rounded-lg transition-all cursor-pointer"
-                  >
-                    <HelpCircle className="w-4 h-4 text-amber-500" />
-                    <span>اختبار Quiz والتصحيح</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Graphic Card / Generated Ecosystem Illustration */}
-              <div className="lg:col-span-5">
-                <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950 shadow-lg">
-                  <img
-                    src={GUIDE_METADATA.coverImage}
-                    alt="Web Development Ecosystem"
-                    className="w-full h-auto object-cover max-h-[320px]"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="p-3 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-                    <span className="font-mono text-sky-400">WebDev Ecosystem 2026</span>
-                    <span>HTML · CSS · Git · GitHub · Pages</span>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </section>
-
-        {/* View Switcher Ribbon (No print) */}
-        <div className="no-print sticky top-16 z-30 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 py-2.5">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap items-center justify-between gap-3">
-            
-            {/* View Mode Tabs */}
-            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-lg text-xs font-medium">
-              <button
-                onClick={() => setViewMode('guide')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all cursor-pointer ${
-                  viewMode === 'guide'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>الدليل التفاعلي الكامل</span>
-              </button>
-
-              <button
-                onClick={() => setViewMode('pdf-view')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all cursor-pointer ${
-                  viewMode === 'pdf-view'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>صفحات كتاب الـ PDF المنظم</span>
-              </button>
-
-              <button
-                onClick={() => setViewMode('playground')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all cursor-pointer ${
-                  viewMode === 'playground'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Code2 className="w-3.5 h-3.5" />
-                <span>محرر الكود المباشر</span>
-              </button>
-
-              <button
-                onClick={() => setViewMode('quiz')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all cursor-pointer ${
-                  viewMode === 'quiz'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <HelpCircle className="w-3.5 h-3.5" />
-                <span>اختبار Quiz (16 سؤالاً)</span>
-              </button>
-            </div>
-
-            {/* Quick Export Button */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handlePrint}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-lg hover:opacity-90 transition-opacity cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>طباعة / حفظ كـ PDF</span>
-              </button>
-            </div>
-
-          </div>
-        </div>
-
-        {/* View Mode 1: PDF Document Book Mode */}
-        {viewMode === 'pdf-view' && (
-          <div className="py-6 px-4">
-            <PdfDocumentView onPrint={handlePrint} />
-          </div>
+        {currentView === 'home' && (
+          <HomePage
+            lang={lang}
+            onNavigate={(view) => {
+              setCurrentView(view);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            completedLessons={completedLessons}
+          />
         )}
 
-        {/* View Mode 2: Interactive Sandbox */}
-        {viewMode === 'playground' && (
+        {currentView === 'html-course' && (
+          <CourseViewer
+            courseType="html"
+            initialLessonId={activeLessonId}
+            lang={lang}
+            completedLessons={completedLessons}
+            bookmarkedLessons={bookmarkedLessons}
+            onToggleComplete={handleToggleComplete}
+            onToggleBookmark={handleToggleBookmark}
+            onOpenInPlayground={handleOpenInPlayground}
+          />
+        )}
+
+        {currentView === 'css-course' && (
+          <CourseViewer
+            courseType="css"
+            initialLessonId={activeLessonId}
+            lang={lang}
+            completedLessons={completedLessons}
+            bookmarkedLessons={bookmarkedLessons}
+            onToggleComplete={handleToggleComplete}
+            onToggleBookmark={handleToggleBookmark}
+            onOpenInPlayground={handleOpenInPlayground}
+          />
+        )}
+
+        {currentView === 'git-course' && (
+          <GitCommandViewer lang={lang} />
+        )}
+
+        {currentView === 'github-course' && (
+          <CourseViewer
+            courseType="github"
+            initialLessonId={activeLessonId}
+            lang={lang}
+            completedLessons={completedLessons}
+            bookmarkedLessons={bookmarkedLessons}
+            onToggleComplete={handleToggleComplete}
+            onToggleBookmark={handleToggleBookmark}
+            onOpenInPlayground={handleOpenInPlayground}
+          />
+        )}
+
+        {/* Upload Project to GitHub Tutorial */}
+        {currentView === 'upload-tutorial' && (
+          <UploadToGithubTutorial
+            lang={lang}
+            onOpenTerminal={() => setCurrentView('terminal-simulator')}
+          />
+        )}
+
+        {/* 26 Git Commands Explained with 12 criteria */}
+        {currentView === 'git-commands' && (
+          <GitCommandsExplained
+            lang={lang}
+          />
+        )}
+
+        {/* CSS Properties Explorer A-J */}
+        {currentView === 'css-properties' && (
+          <CssPropertiesExplained
+            language={lang}
+            onNavigateHome={() => setCurrentView('home')}
+            onNavigatePlayground={() => setCurrentView('css-playground')}
+          />
+        )}
+
+        {/* Interactive Git Terminal Simulator */}
+        {currentView === 'terminal-simulator' && (
+          <GitTerminalSimulator
+            language={lang}
+            onNavigateHome={() => setCurrentView('home')}
+            onNavigateTutorial={() => setCurrentView('upload-tutorial')}
+          />
+        )}
+
+        {/* Interactive CSS Visual Playground */}
+        {currentView === 'css-playground' && (
+          <CssVisualPlayground
+            language={lang}
+            onNavigateHome={() => setCurrentView('home')}
+            onNavigateProperties={() => setCurrentView('css-properties')}
+          />
+        )}
+
+        {/* In-Browser Code Playground */}
+        {currentView === 'playground' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  مختبر كود البورتفوليو التفاعلي
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  جرّب تعديل العناوين، نصوص المشاريع، وألوان الـ CSS ولاحظ التغيير الفوري في شاشات الحواسيب والهواتف
-                </p>
-              </div>
-            </div>
-            <CodePlayground />
+            <CodePlayground lang={lang} initialCode={playgroundStarterCode} />
           </div>
         )}
 
-        {/* View Mode 3: Interactive Quiz Mode */}
-        {viewMode === 'quiz' && (
+        {/* Interactive Quiz System */}
+        {currentView === 'quiz' && (
           <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-6">
-            <InteractiveQuiz />
+            <InteractiveQuizSystem
+              lang={lang}
+              onSaveQuizResult={handleSaveQuizResult}
+            />
           </div>
         )}
 
-        {/* View Mode 4: Comprehensive Interactive Guide Reader */}
-        {viewMode === 'guide' && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-              
-              {/* Sticky Sidebar Index (Desktop) */}
-              <aside className="no-print hidden lg:block lg:col-span-3 sticky top-32 space-y-4">
-                <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
-                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    فهرس الفصول والمواضيع
-                  </h3>
-                  <nav className="space-y-1">
-                    {CHAPTERS.map((ch) => (
-                      <a
-                        key={ch.id}
-                        href={`#${ch.id}`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          const el = document.getElementById(ch.id);
-                          if (el) el.scrollIntoView({ behavior: 'smooth' });
-                          setActiveTab(ch.id);
-                        }}
-                        className={`block text-xs font-medium py-2 px-2.5 rounded-lg transition-colors ${
-                          activeTab === ch.id
-                            ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 font-semibold'
-                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-                        }`}
-                      >
-                        <span className="font-mono text-[10px] text-slate-400 ml-1.5">{ch.number}.</span>
-                        {ch.title}
-                      </a>
-                    ))}
-                    
-                    <button
-                      onClick={() => setViewMode('quiz')}
-                      className="w-full text-right block text-xs font-medium py-2 px-2.5 rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors"
-                    >
-                      <span className="font-mono text-[10px] ml-1.5">06.</span>
-                      أسئلة Quiz مع التصحيح (16)
-                    </button>
-                  </nav>
-
-                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
-                    <button
-                      onClick={() => setViewMode('pdf-view')}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold bg-sky-600 text-white rounded-lg hover:bg-sky-500 transition-colors cursor-pointer"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>عرض صفحات الـ PDF</span>
-                    </button>
-                  </div>
-                </div>
-              </aside>
-
-              {/* Main Reading Flow */}
-              <div className="lg:col-span-9 space-y-12">
-                
-                {/* Visual Architecture Diagram Section */}
-                <div id="comparisons-integration">
-                  <ArchitectureDiagram />
-                </div>
-
-                {/* Chapters Flow */}
-                {CHAPTERS.map((chapter) => (
-                  <div
-                    key={chapter.id}
-                    id={chapter.id}
-                    className="p-6 sm:p-8 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs"
-                  >
-                    <ChapterContent chapter={chapter} />
-                  </div>
-                ))}
-
-                {/* Embedded Live Code Playground Section */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                        تجربة الكود عملياً في المحرر المباشر
-                      </h3>
-                      <p className="text-xs text-slate-500">
-                        يمكنك تعديل أي جزء من كود الـ HTML أو CSS أدناه ورؤية النتيجة مباشرة
-                      </p>
-                    </div>
-                  </div>
-                  <CodePlayground />
-                </div>
-
-                {/* Embedded Quiz Section */}
-                <div id="quiz" className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                        اختبار الـ Quiz التفاعلي مع التصحيح الفوري
-                      </h3>
-                      <p className="text-xs text-slate-500">
-                        16 سؤالاً تطبيقياً مع شرح بالدارجة والفصحى لكل جواب صحيح
-                      </p>
-                    </div>
-                  </div>
-                  <InteractiveQuiz />
-                </div>
-
-              </div>
-
-            </div>
-          </div>
+        {/* Practical Real Projects */}
+        {currentView === 'projects' && (
+          <PracticalProjects
+            lang={lang}
+            onOpenInPlayground={handleOpenInPlayground}
+          />
         )}
 
+        {/* Learning Progress Dashboard */}
+        {currentView === 'dashboard' && (
+          <LearningDashboard
+            lang={lang}
+            completedLessons={completedLessons}
+            bookmarkedLessons={bookmarkedLessons}
+            quizScores={quizScores}
+            onNavigateToLesson={handleNavigateToLesson}
+            onClearProgress={handleClearProgress}
+          />
+        )}
+
+        {/* Printable PDF Complete Handbook */}
+        {currentView === 'pdf-view' && (
+          <div className="py-6 px-4">
+            <PdfDocumentView onPrint={() => window.print()} />
+          </div>
+        )}
       </main>
 
-      {/* Clean Footer (No print) */}
-      <footer className="no-print mt-auto border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 py-8 text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© 2026 الدليل الشامل لأساسيات الويب وبناء البورتفوليو · مخصص للمهندسين والمطورين.</p>
-          <div className="flex items-center gap-4">
+      {/* Global Search Modal */}
+      <SearchModal
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        lang={lang}
+        onNavigate={handleSearchNavigate}
+      />
+
+      {/* Futuristic Clean Footer */}
+      <footer className="no-print border-t border-slate-800 bg-slate-950 py-10 text-xs text-slate-500">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="space-y-1 text-center md:text-start">
+            <p className="font-bold text-slate-300">
+              WebDev Master · {lang === 'ar' ? 'أكاديمية احتراف الويب 2026' : lang === 'fr' ? 'Plateforme WebDev Master 2026' : 'Next-Gen Web Engineering Platform'}
+            </p>
+            <p className="text-slate-500">
+              HTML5 · CSS3 · Git Engine · GitHub Cloud Collaboration · Terminal Simulator
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-4 font-medium">
             <button
-              onClick={() => setViewMode('pdf-view')}
-              className="hover:text-slate-900 dark:hover:text-white transition-colors"
+              onClick={() => setCurrentView('html-course')}
+              className="hover:text-white transition-colors cursor-pointer"
             >
-              نسخة الـ PDF للطباعة
+              HTML
             </button>
             <button
-              onClick={() => setViewMode('quiz')}
-              className="hover:text-slate-900 dark:hover:text-white transition-colors"
+              onClick={() => setCurrentView('css-course')}
+              className="hover:text-white transition-colors cursor-pointer"
             >
-              بنك الأسئلة والتصحيح
+              CSS
             </button>
             <button
-              onClick={handlePrint}
-              className="text-sky-600 dark:text-sky-400 font-semibold hover:underline"
+              onClick={() => setCurrentView('git-course')}
+              className="hover:text-white transition-colors cursor-pointer"
             >
-              حفظ كـ PDF
+              Git
+            </button>
+            <button
+              onClick={() => setCurrentView('github-course')}
+              className="hover:text-white transition-colors cursor-pointer"
+            >
+              GitHub
+            </button>
+            <button
+              onClick={() => setCurrentView('upload-tutorial')}
+              className="hover:text-cyan-400 text-slate-400 transition-colors cursor-pointer"
+            >
+              {lang === 'ar' ? 'رفع المشروع' : lang === 'fr' ? 'Upload' : 'Upload Tutorial'}
+            </button>
+            <button
+              onClick={() => setCurrentView('terminal-simulator')}
+              className="hover:text-emerald-400 text-slate-400 transition-colors cursor-pointer"
+            >
+              Terminal
+            </button>
+            <button
+              onClick={() => setCurrentView('css-playground')}
+              className="hover:text-purple-400 text-slate-400 transition-colors cursor-pointer"
+            >
+              CSS Lab
+            </button>
+            <button
+              onClick={() => setCurrentView('pdf-view')}
+              className="hover:text-cyan-400 text-slate-400 transition-colors cursor-pointer"
+            >
+              {t.pdfHandbook}
             </button>
           </div>
         </div>
