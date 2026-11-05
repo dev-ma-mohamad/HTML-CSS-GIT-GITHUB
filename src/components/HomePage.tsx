@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Language, translations } from '../data/translations';
 import { ArchitectureDiagram } from './ArchitectureDiagram';
 import { useAuth } from '../context/AuthContext';
-import { collection, getDocs, query, limit } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
 import {
   Code2,
   Terminal,
@@ -64,28 +63,28 @@ export const HomePage: React.FC<HomePageProps> = ({
   useEffect(() => {
     const fetchRealStats = async () => {
       try {
-        // Query users
-        const usersSnap = await getDocs(collection(db, 'users'));
-        let learners = usersSnap.size;
-        let lessonsDone = 0;
-        let pts = 0;
+        const { data: users, error: usersError } = await supabase
+          .from('public_leaderboard')
+          .select('completed_lessons, points');
+        if (usersError) throw usersError;
+        const { data: comments, error: commentsError } = await supabase
+          .from('comments')
+          .select('rating');
+        if (commentsError) throw commentsError;
 
-        usersSnap.forEach((doc) => {
-          const d = doc.data();
-          lessonsDone += d.completedLessons?.length || 0;
-          pts += d.points || 0;
-        });
-
-        // Query comments & ratings
-        const commentsSnap = await getDocs(collection(db, 'comments'));
+        const learners = users.length;
+        const lessonsDone = users.reduce(
+          (total, row) => total + (row.completed_lessons?.length || 0),
+          0
+        );
+        const pts = users.reduce((total, row) => total + (row.points || 0), 0);
         let totalRatings = 0;
         let ratingSum = 0;
 
-        commentsSnap.forEach((doc) => {
-          const d = doc.data();
-          if (typeof d.rating === 'number' && d.rating > 0) {
+        comments.forEach((comment) => {
+          if (typeof comment.rating === 'number' && comment.rating > 0) {
             totalRatings += 1;
-            ratingSum += d.rating;
+            ratingSum += comment.rating;
           }
         });
 
@@ -93,7 +92,7 @@ export const HomePage: React.FC<HomePageProps> = ({
           totalLearners: learners,
           totalCompletedLessons: lessonsDone,
           totalPoints: pts,
-          totalReviews: commentsSnap.size,
+          totalReviews: comments.length,
           avgRating: totalRatings > 0 ? (ratingSum / totalRatings).toFixed(1) : null
         });
       } catch (err) {
@@ -452,7 +451,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             <p className="text-2xl font-black text-emerald-400 font-mono">
               {platformStats.totalCompletedLessons}
             </p>
-            <p className="text-[10px] text-slate-500 font-mono">Tracked in Firestore</p>
+            <p className="text-[10px] text-slate-500 font-mono">Tracked in Supabase</p>
           </div>
 
           <div className="text-center p-2 space-y-1">

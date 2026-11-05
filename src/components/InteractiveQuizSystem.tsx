@@ -83,13 +83,14 @@ export const InteractiveQuizSystem: React.FC<InteractiveQuizSystemProps> = ({
       [questionId]: optionIdx
     }));
 
-    const isCorrect = optionIdx === currentQ?.correctIndex;
     if (user) {
-      recordQuizAttempt(questionId, isCorrect).then((res) => {
+      recordQuizAttempt(questionId, optionIdx).then((res) => {
         if (res.earnedPoint) {
           setPointAwarded(true);
           setTimeout(() => setPointAwarded(false), 3500);
         }
+      }).catch((error) => {
+        console.error('Failed to record quiz attempt:', error);
       });
     }
   };

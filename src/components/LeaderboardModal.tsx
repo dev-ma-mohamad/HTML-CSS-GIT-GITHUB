@@ -9,8 +9,7 @@ import {
   User,
   Sparkles
 } from 'lucide-react';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db, UserProfileData } from '../lib/firebase';
+import { profileFromRow, supabase, UserProfileData } from '../lib/supabase';
 import { Language } from '../data/translations';
 
 interface LeaderboardModalProps {
@@ -33,14 +32,32 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     const fetchLeaderboard = async () => {
       setLoading(true);
       try {
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, orderBy('points', 'desc'), limit(50));
-        const snap = await getDocs(q);
+        const { data, error } = await supabase
+          .from('public_leaderboard')
+          .select('id, display_name, photo_url, role, selected_level, points, completed_lessons')
+          .order('points', { ascending: false })
+          .limit(50);
+        if (error) throw error;
 
-        const loaded: UserProfileData[] = [];
-        snap.forEach((doc) => {
-          loaded.push(doc.data() as UserProfileData);
-        });
+        const loaded: UserProfileData[] = data.map((row) =>
+          profileFromRow({
+            id: row.id,
+            email: '',
+            display_name: row.display_name,
+            photo_url: row.photo_url,
+            role: row.role,
+            selected_level: row.selected_level,
+            onboarding_completed: false,
+            points: row.points,
+            current_course: 'html',
+            current_lesson_id: 'html-01',
+            completed_lessons: row.completed_lessons || [],
+            completed_exercises: [],
+            created_at: '',
+            updated_at: '',
+            last_activity_date: ''
+          })
+        );
         setUsers(loaded);
       } catch (err) {
         console.error("Failed to load leaderboard:", err);

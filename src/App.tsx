@@ -53,7 +53,7 @@ function MainApp() {
   const [activeLessonId, setActiveLessonId] = useState<string | undefined>();
   const [playgroundStarterCode, setPlaygroundStarterCode] = useState<{ html?: string; css?: string } | undefined>();
 
-  // 4. Learning Progress States (Synchronized with backend Firestore profile)
+  // 4. Learning progress synchronized with the Supabase profile.
   const [completedLessons, setCompletedLessons] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('webdev_completed');
@@ -92,7 +92,7 @@ function MainApp() {
   const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
   const [termsModalOpen, setTermsModalOpen] = useState(false);
 
-  // Sync user profile from Firestore when logged in (Source of Truth!)
+  // Sync the user's Supabase profile when logged in.
   useEffect(() => {
     if (profile) {
       if (profile.completedLessons && profile.completedLessons.length > 0) {
@@ -164,7 +164,7 @@ function MainApp() {
 
     setCompletedLessons(updated);
 
-    // Save automatically to Firestore backend
+    // Save automatically to the Supabase backend.
     if (user) {
       const course = lessonId.startsWith('css')
         ? 'css'
@@ -173,7 +173,9 @@ function MainApp() {
         : lessonId.startsWith('gh')
         ? 'github'
         : 'html';
-      saveProgress(course, lessonId, updated);
+      void saveProgress(course, lessonId, updated).catch((error) => {
+        console.error('Failed to save learning progress:', error);
+      });
     }
   };
 
@@ -463,7 +465,7 @@ function MainApp() {
               <button onClick={() => setPrivacyModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
-              We respect your privacy. User accounts, email addresses, and learning progression states are stored securely in Google Cloud Firestore. We never sell or share user data with third-party advertising companies. Authentication tokens are verified directly with Google OAuth and GitHub.
+              We respect your privacy. User accounts, email addresses, and learning progress are stored in Supabase and protected by database access policies. We never sell or share user data with third-party advertising companies. Authentication tokens are verified by Supabase Auth with Google OAuth and GitHub.
             </p>
             <p className="text-xs text-slate-400">
               Contact: dev.ma.mohamad@gmail.com
@@ -582,7 +584,7 @@ function MainApp() {
           <div className="pt-6 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-slate-500 text-[11px] font-mono">
             <p>© {new Date().getFullYear()} WebDev Master. All rights reserved.</p>
             <p className="flex items-center gap-1">
-              <span>Engineered with zero fake data · Firestore Persistent State</span>
+              <span>Engineered with zero fake data · Supabase Persistent State</span>
             </p>
           </div>
         </div>

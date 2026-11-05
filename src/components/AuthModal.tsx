@@ -85,29 +85,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }[language]
   };
 
-  const mapFirebaseError = (err: any): string => {
-    const code = err?.code || '';
-    if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+  const mapAuthError = (err: unknown): string => {
+    const authError = err as { code?: string; message?: string };
+    const code = authError.code || '';
+    if (['invalid_credentials', 'invalid_grant', 'auth/invalid-credential'].includes(code)) {
       return language === 'ar'
         ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة.'
         : 'Invalid email or password.';
     }
-    if (code === 'auth/email-already-in-use') {
+    if (['user_already_exists', 'email_exists', 'auth/email-already-in-use'].includes(code)) {
       return language === 'ar'
         ? 'هذا البريد الإلكتروني مسجل بالفعل. يرجى تسجيل الدخول.'
         : 'This email is already in use. Please sign in.';
     }
-    if (code === 'auth/weak-password') {
+    if (['weak_password', 'auth/weak-password'].includes(code)) {
       return language === 'ar'
         ? 'كلمة المرور ضعيفة جداً. استخدم 6 خانات على الأقل.'
         : 'Password is too weak. Use at least 6 characters.';
     }
-    if (code === 'auth/popup-closed-by-user') {
+    if (code === 'popup_closed_by_user') {
       return language === 'ar'
         ? 'تم إلغاء نافذة تسجيل الدخول من قبل المستخدم.'
         : 'Sign-in window was closed.';
     }
-    return err?.message || 'Authentication error. Please try again.';
+    return authError.message || 'Authentication error. Please try again.';
   };
 
   const handleGoogle = async () => {
@@ -118,7 +119,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onSuccess?.();
       onClose();
     } catch (err: any) {
-      setError(mapFirebaseError(err));
+      setError(mapAuthError(err));
     } finally {
       setLoading(false);
     }
@@ -132,7 +133,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onSuccess?.();
       onClose();
     } catch (err: any) {
-      setError(mapFirebaseError(err));
+      setError(mapAuthError(err));
     } finally {
       setLoading(false);
     }
@@ -162,7 +163,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setResetSent(true);
       }
     } catch (err: any) {
-      setError(mapFirebaseError(err));
+      setError(mapAuthError(err));
     } finally {
       setLoading(false);
     }

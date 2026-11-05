@@ -1,35 +1,18 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import {
-  User,
-  signInWithPopup,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
-  signOut,
-  updateProfile,
-  onAuthStateChanged
-} from 'firebase/auth';
-import {
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  increment,
-  serverTimestamp,
-  collection,
-  onSnapshot
-} from 'firebase/firestore';
-import {
-  auth,
-  db,
-  googleProvider,
-  githubProvider,
   ADMIN_EMAIL,
-  UserProfileData
-} from '../lib/firebase';
+  AppUser,
+  profileFromRow,
+  profileToRow,
+  supabase,
+  UserProfileData,
+  UserProfileRow,
+  toAppUser
+} from '../lib/supabase';
 
 interface AuthContextType {
-  user: User | null;
+  user: AppUser | null;
   profile: UserProfileData | null;
   isLoading: boolean;
   isAdmin: boolean;
@@ -42,218 +25,224 @@ interface AuthContextType {
   updateLevel: (level: 'beginner' | 'intermediate' | 'advanced') => Promise<void>;
   completeOnboarding: (level: 'beginner' | 'intermediate' | 'advanced') => Promise<void>;
   saveProgress: (courseId: string, lessonId: string, completedLessons: string[]) => Promise<void>;
-  recordQuizAttempt: (questionId: string | number, isCorrect: boolean) => Promise<{ earnedPoint: boolean }>;
+  recordQuizAttempt: (questionId: string | number, answerIndex: number) => Promise<{ earnedPoint: boolean }>;
   updateUserProfile: (displayName: string, photoURL?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [profile, setProfile] = useState<UserProfileData | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Sync Auth State & Profile
   useEffect(() => {
-    let unsubscribeProfile: (() => void) | null = null;
+    let active = true;
+    let profileChannel: ReturnType<typeof supabase.channel> | null = null;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
+    const loadProfile = async (authUser: NonNullable<Session['user']>) => {
+      try {
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', authUser.id)
+          .maybeSingle();
+        if (error) throw error;
 
-      if (currentUser) {
-        const userDocRef = doc(db, 'users', currentUser.uid);
-
-        // Listen to live updates of the profile
-        unsubscribeProfile = onSnapshot(userDocRef, async (snapshot) => {
-          if (snapshot.exists()) {
-            setProfile(snapshot.data() as UserProfileData);
-          } else {
-            // First time login - initialize profile document in Firestore
-            const isInitialAdmin = currentUser.email === ADMIN_EMAIL;
-            const newProfile: UserProfileData = {
-              uid: currentUser.uid,
-              email: currentUser.email || '',
-              displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Web Developer',
-              photoURL: currentUser.photoURL || '',
-              role: isInitialAdmin ? 'admin' : 'user',
-              selectedLevel: undefined,
-              onboardingCompleted: false,
-              points: 0,
-              currentCourse: 'html',
-              currentLessonId: 'html-01',
-              completedLessons: [],
-              completedExercises: [],
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-              lastActivityDate: serverTimestamp()
-            };
-
-            await setDoc(userDocRef, newProfile);
-            setProfile(newProfile);
-          }
-          setIsLoading(false);
-        }, (err) => {
-          console.error("Profile snapshot error:", err);
-          setIsLoading(false);
-        });
-      } else {
-        if (unsubscribeProfile) {
-          unsubscribeProfile();
-          unsubscribeProfile = null;
+        let row = data as UserProfileRow | null;
+        if (!row) {
+          const mappedUser = toAppUser(authUser);
+          const initialProfile: UserProfileData = {
+            uid: mappedUser.uid,
+            email: mappedUser.email,
+            displayName: mappedUser.displayName,
+            photoURL: mappedUser.photoURL,
+            role: 'user',
+            onboardingCompleted: false,
+            points: 0,
+            currentCourse: 'html',
+            currentLessonId: 'html-01',
+            completedLessons: [],
+            completedExercises: []
+          };
+          const { data: created, error: createError } = await supabase
+            .from('user_profiles')
+            .upsert(profileToRow(initialProfile))
+            .select('*')
+            .single();
+          if (createError) throw createError;
+          row = created as UserProfileRow;
         }
-        setProfile(null);
-        setIsLoading(false);
+
+        if (active) setProfile(profileFromRow(row));
+      } catch (error) {
+        console.error('Failed to load Supabase user profile:', error);
+        if (active) setProfile(null);
+      } finally {
+        if (active) setIsLoading(false);
       }
+    };
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser ? toAppUser(currentUser) : null);
+      setProfile(null);
+
+      if (profileChannel) {
+        void supabase.removeChannel(profileChannel);
+        profileChannel = null;
+      }
+
+      if (!currentUser) {
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      queueMicrotask(() => {
+        if (active) void loadProfile(currentUser);
+      });
+
+      profileChannel = supabase
+        .channel(`profile-${currentUser.id}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'user_profiles', filter: `id=eq.${currentUser.id}` },
+          (payload) => {
+            if (active && payload.new && Object.keys(payload.new).length > 0) {
+              setProfile(profileFromRow(payload.new as UserProfileRow));
+            }
+          }
+        )
+        .subscribe();
     });
 
     return () => {
-      unsubscribeAuth();
-      if (unsubscribeProfile) unsubscribeProfile();
+      active = false;
+      authListener.subscription.unsubscribe();
+      if (profileChannel) void supabase.removeChannel(profileChannel);
     };
   }, []);
 
   const loginWithGoogle = async () => {
-    await signInWithPopup(auth, googleProvider);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin }
+    });
+    if (error) throw error;
   };
 
   const loginWithGitHub = async () => {
-    await signInWithPopup(auth, githubProvider);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'github',
+      options: { redirectTo: window.location.origin }
+    });
+    if (error) throw error;
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
-    await signInWithEmailAndPassword(auth, email, pass);
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if (error) throw error;
   };
 
   const registerWithEmail = async (email: string, pass: string, name: string) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    if (name) {
-      await updateProfile(cred.user, { displayName: name });
-    }
+    const { error } = await supabase.auth.signUp({
+      email,
+      password: pass,
+      options: { data: { display_name: name } }
+    });
+    if (error) throw error;
   };
 
   const sendPasswordReset = async (email: string) => {
-    await sendPasswordResetEmail(auth, email);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin
+    });
+    if (error) throw error;
   };
 
   const logout = async () => {
-    await signOut(auth);
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
   };
 
   const updateLevel = async (level: 'beginner' | 'intermediate' | 'advanced') => {
     if (!user) return;
-    const userDocRef = doc(db, 'users', user.uid);
-    await updateDoc(userDocRef, {
-      selectedLevel: level,
-      updatedAt: serverTimestamp(),
-      lastActivityDate: serverTimestamp()
-    });
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({ selected_level: level, last_activity_date: new Date().toISOString() })
+      .eq('id', user.uid);
+    if (error) throw error;
   };
 
   const completeOnboarding = async (level: 'beginner' | 'intermediate' | 'advanced') => {
     if (!user) return;
-    const userDocRef = doc(db, 'users', user.uid);
-    await updateDoc(userDocRef, {
-      selectedLevel: level,
-      onboardingCompleted: true,
-      updatedAt: serverTimestamp(),
-      lastActivityDate: serverTimestamp()
-    });
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({
+        selected_level: level,
+        onboarding_completed: true,
+        last_activity_date: new Date().toISOString()
+      })
+      .eq('id', user.uid);
+    if (error) throw error;
   };
 
   const saveProgress = async (courseId: string, lessonId: string, completedLessons: string[]) => {
     if (!user) return;
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        currentCourse: courseId,
-        currentLessonId: lessonId,
-        completedLessons: completedLessons,
-        lastActivityDate: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-    } catch (err) {
-      console.error("Error saving progress to backend:", err);
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({
+        current_course: courseId,
+        current_lesson_id: lessonId,
+        completed_lessons: completedLessons,
+        last_activity_date: new Date().toISOString()
+      })
+      .eq('id', user.uid);
+    if (error) {
+      console.error('Error saving progress to Supabase:', error);
+      throw error;
     }
   };
 
-  // Rule 6: Exactly +1 point for answering correctly on the FIRST attempt!
   const recordQuizAttempt = async (
     questionId: string | number,
-    isCorrect: boolean
+    answerIndex: number
   ): Promise<{ earnedPoint: boolean }> => {
     if (!user) return { earnedPoint: false };
-
-    try {
-      const qIdStr = String(questionId);
-      const attemptDocRef = doc(db, 'users', user.uid, 'quizAttempts', qIdStr);
-      const attemptSnap = await getDoc(attemptDocRef);
-
-      const userDocRef = doc(db, 'users', user.uid);
-
-      if (!attemptSnap.exists()) {
-        // First attempt ever for this question!
-        if (isCorrect) {
-          // Rule: Reward +1 point!
-          await setDoc(attemptDocRef, {
-            questionId: qIdStr,
-            firstAttemptCorrect: true,
-            attemptsCount: 1,
-            earnedPoint: true,
-            answeredAt: serverTimestamp()
-          });
-
-          await updateDoc(userDocRef, {
-            points: increment(1),
-            lastActivityDate: serverTimestamp()
-          });
-
-          return { earnedPoint: true };
-        } else {
-          // First attempt was incorrect: 0 points now and forever for this question
-          await setDoc(attemptDocRef, {
-            questionId: qIdStr,
-            firstAttemptCorrect: false,
-            attemptsCount: 1,
-            earnedPoint: false,
-            answeredAt: serverTimestamp()
-          });
-
-          await updateDoc(userDocRef, {
-            lastActivityDate: serverTimestamp()
-          });
-
-          return { earnedPoint: false };
-        }
-      } else {
-        // Repeated attempt on the same question: strictly 0 points
-        const existingData = attemptSnap.data();
-        await updateDoc(attemptDocRef, {
-          attemptsCount: (existingData?.attemptsCount || 1) + 1,
-          lastAttemptedAt: serverTimestamp()
-        });
-
-        return { earnedPoint: false };
-      }
-    } catch (err) {
-      console.error("Error recording quiz attempt:", err);
-      return { earnedPoint: false };
+    const { data, error } = await supabase.rpc('record_quiz_attempt', {
+      p_user_id: user.uid,
+      p_question_id: String(questionId),
+      p_answer_index: answerIndex
+    });
+    if (error) {
+      console.error('Error recording quiz attempt in Supabase:', error);
+      throw error;
     }
+    return data as { earnedPoint: boolean };
   };
 
   const updateUserProfile = async (displayName: string, photoURL?: string) => {
     if (!user) return;
-    await updateProfile(user, { displayName, photoURL });
-    const userDocRef = doc(db, 'users', user.uid);
-    await updateDoc(userDocRef, {
-      displayName,
-      ...(photoURL ? { photoURL } : {}),
-      updatedAt: serverTimestamp()
+    const { error: authError } = await supabase.auth.updateUser({
+      data: {
+        display_name: displayName,
+        ...(photoURL ? { avatar_url: photoURL } : {})
+      }
     });
+    if (authError) throw authError;
+
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({
+        display_name: displayName,
+        ...(photoURL ? { photo_url: photoURL } : {})
+      })
+      .eq('id', user.uid);
+    if (error) throw error;
   };
 
-  const isAdmin = Boolean(
-    user && (user.email === ADMIN_EMAIL || profile?.role === 'admin')
-  );
+  const isAdmin = Boolean(user && (user.email === ADMIN_EMAIL || profile?.role === 'admin'));
 
   return (
     <AuthContext.Provider

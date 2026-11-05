@@ -17,17 +17,13 @@ import {
   ArrowRight
 } from 'lucide-react';
 import {
-  collection,
-  query,
-  getDocs,
-  deleteDoc,
-  doc,
-  addDoc,
-  serverTimestamp,
-  orderBy,
-  limit
-} from 'firebase/firestore';
-import { db, UserProfileData, CommentData, ADMIN_EMAIL } from '../lib/firebase';
+  ADMIN_EMAIL,
+  CommentData,
+  commentFromRow,
+  profileFromRow,
+  supabase,
+  UserProfileData
+} from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Language } from '../data/translations';
 
@@ -54,32 +50,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setLoading(true);
     try {
       // 1. Fetch Users
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const uList: UserProfileData[] = [];
-      usersSnap.forEach((d) => {
-        uList.push(d.data() as UserProfileData);
-      });
-      setUsersList(uList);
+      const { data: users, error: usersError } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (usersError) throw usersError;
+      setUsersList(users.map(profileFromRow));
 
       // 2. Fetch Comments
-      const commentsSnap = await getDocs(
-        query(collection(db, 'comments'), orderBy('createdAt', 'desc'))
-      );
-      const cList: CommentData[] = [];
-      commentsSnap.forEach((d) => {
-        cList.push({ id: d.id, ...d.data() } as CommentData);
-      });
-      setCommentsList(cList);
+      const { data: comments, error: commentsError } = await supabase
+        .from('comments')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (commentsError) throw commentsError;
+      setCommentsList(comments.map(commentFromRow));
 
       // 3. Fetch Audit Logs
-      const auditSnap = await getDocs(
-        query(collection(db, 'admin_audit_logs'), orderBy('timestamp', 'desc'), limit(50))
-      );
-      const aList: any[] = [];
-      auditSnap.forEach((d) => {
-        aList.push({ id: d.id, ...d.data() });
-      });
-      setAuditLogs(aList);
+      const { data: logs, error: logsError } = await supabase
+        .from('admin_audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (logsError) throw logsError;
+      setAuditLogs(logs);
     } catch (err) {
       console.error("Failed to load admin data:", err);
     } finally {
@@ -136,15 +129,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!window.confirm(`Delete comment from ${authorName}?`)) return;
 
     try {
-      await deleteDoc(doc(db, 'comments', commentId));
+      const { error: deleteError } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', commentId);
+      if (deleteError) throw deleteError;
 
       // Record audit log
-      await addDoc(collection(db, 'admin_audit_logs'), {
-        adminEmail: user.email,
+      const { error: auditError } = await supabase.from('admin_audit_logs').insert({
+        admin_id: user.uid,
+        admin_email: user.email,
         action: `Deleted comment from ${authorName}`,
-        targetId: commentId,
-        timestamp: serverTimestamp()
+        target_id: commentId
       });
+      if (auditError) throw auditError;
 
       // Refresh state
       setCommentsList((prev) => prev.filter((c) => c.id !== commentId));
@@ -204,7 +202,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </span>
           </h1>
           <p className="text-xs text-slate-400 font-mono">
-            Direct real-time query interface with production Firestore database.
+          Supabase administration and moderation tools.
           </p>
         </div>
 

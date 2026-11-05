@@ -12,20 +12,7 @@ import {
   ShieldAlert,
   User
 } from 'lucide-react';
-import {
-  collection,
-  query,
-  orderBy,
-  limit,
-  getDocs,
-  addDoc,
-  deleteDoc,
-  updateDoc,
-  doc,
-  serverTimestamp,
-  onSnapshot
-} from 'firebase/firestore';
-import { db, CommentData } from '../lib/firebase';
+import { commentFromRow, CommentData, supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Language } from '../data/translations';
 
@@ -55,35 +42,37 @@ export const CommunitySection: React.FC<CommunitySectionProps> = ({
 
   const isRtl = language === 'ar';
 
-  // Real-time listen to comments
   useEffect(() => {
-    const commentsRef = collection(db, 'comments');
-    const q = query(commentsRef, orderBy('createdAt', 'desc'), limit(50));
+    let active = true;
+    const fetchComments = async () => {
+      const { data, error } = await supabase
+        .from('comments')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) {
+        console.error('Error fetching Supabase comments:', error);
+        if (active) setLoading(false);
+        return;
+      }
+      if (active) {
+        setComments(data.map(commentFromRow));
+        setLoading(false);
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list: CommentData[] = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        list.push({
-          id: docSnap.id,
-          userId: data.userId,
-          userDisplayName: data.userDisplayName || 'Learner',
-          userPhotoURL: data.userPhotoURL || '',
-          content: data.content,
-          rating: data.rating,
-          reported: data.reported || false,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt
-        });
-      });
-      setComments(list);
-      setLoading(false);
-    }, (err) => {
-      console.error("Error fetching comments:", err);
-      setLoading(false);
-    });
+    void fetchComments();
+    const channel = supabase
+      .channel('community-comments')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => {
+        void fetchComments();
+      })
+      .subscribe();
 
-    return () => unsubscribe();
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
   }, []);
 
   // Calculate actual statistics from submitted comments
@@ -111,17 +100,14 @@ export const CommunitySection: React.FC<CommunitySectionProps> = ({
     setSubmitting(true);
 
     try {
-      const commentsRef = collection(db, 'comments');
-      await addDoc(commentsRef, {
-        userId: user.uid,
-        userDisplayName: profile?.displayName || user.displayName || 'Web Developer',
-        userPhotoURL: profile?.photoURL || user.photoURL || '',
+      const { error } = await supabase.from('comments').insert({
+        user_id: user.uid,
+        user_display_name: profile?.displayName || user.displayName || 'Web Developer',
+        user_photo_url: profile?.photoURL || user.photoURL || '',
         content: commentText.trim(),
-        rating: rating,
-        reported: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        rating
       });
+      if (error) throw error;
 
       setCommentText('');
       setRating(5);
@@ -141,7 +127,8 @@ export const CommunitySection: React.FC<CommunitySectionProps> = ({
     if (!window.confirm(confirmMsg)) return;
 
     try {
-      await deleteDoc(doc(db, 'comments', commentId));
+      const { error } = await supabase.from('comments').delete().eq('id', commentId);
+      if (error) throw error;
     } catch (err) {
       console.error("Failed to delete comment:", err);
     }
@@ -156,11 +143,11 @@ export const CommunitySection: React.FC<CommunitySectionProps> = ({
   const handleSaveEdit = async (commentId: string) => {
     if (!editText.trim()) return;
     try {
-      await updateDoc(doc(db, 'comments', commentId), {
+      const { error } = await supabase.from('comments').update({
         content: editText.trim(),
-        rating: editRating,
-        updatedAt: serverTimestamp()
-      });
+        rating: editRating
+      }).eq('id', commentId);
+      if (error) throw error;
       setEditingCommentId(null);
     } catch (err) {
       console.error("Failed to update comment:", err);
@@ -176,9 +163,10 @@ export const CommunitySection: React.FC<CommunitySectionProps> = ({
     if (!window.confirm(confirmMsg)) return;
 
     try {
-      await updateDoc(doc(db, 'comments', commentId), {
+      const { error } = await supabase.from('comments').update({
         reported: true
-      });
+      }).eq('id', commentId);
+      if (error) throw error;
       alert(language === 'ar' ? 'تم إرسال البلاغ للإدارة للمراجعة.' : 'Report submitted to moderators.');
     } catch (err) {
       console.error("Failed to report comment:", err);
@@ -330,7 +318,7 @@ export const CommunitySection: React.FC<CommunitySectionProps> = ({
         <div className="space-y-4">
           <div className="flex items-center justify-between text-xs text-slate-400 font-mono pb-2">
             <span>{comments.length} {language === 'ar' ? 'تعليقات ومشاركات' : 'Verified Comments'}</span>
-            <span>Live Firestore Community</span>
+            <span>Live Supabase Community</span>
           </div>
 
           {loading ? (
