@@ -1,0 +1,8 @@
+{
+  "name": "WebDev Master PDF Guide: HTML, CSS, Git, GitHub & Portfolio",
+  "description": "دليل تدريبي شامل ومنظم بصيغة PDF وتفاعلي يشمل شرح HTML و CSS، Git و GitHub، بناء Portfolio احترافي، مقارنات دقيقة، أمثلة كود حقيقية، وبنك أسئلة كويز مع التصحيح والشرح.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

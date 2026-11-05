@@ -1,0 +1,98 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-arabic: 'Cairo', system-ui, sans-serif;
+    --font-latin: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-code: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    font-family: var(--font-arabic);
+  }
+
+  code, pre, kbd, .font-mono {
+    font-family: var(--font-code);
+  }
+}
+
+/* Print and PDF Generation Styles */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 14mm 15mm 14mm;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+    line-height: 1.55 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide screen-only interactive controls */
+  .no-print,
+  nav,
+  header,
+  .web-toolbar,
+  .quiz-interactive-controls,
+  button:not(.print-include) {
+    display: none !important;
+  }
+
+  /* Show PDF print-only elements */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Page break utilities */
+  .page-break {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
+  .avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* High contrast code blocks in print */
+  pre, code {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Ensure links are readable and clean */
+  a {
+    color: #0369a1 !important;
+    text-decoration: none !important;
+  }
+
+  /* Remove heavy shadows */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+}
+
+/* Scrollbar styling for code and sidebars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
