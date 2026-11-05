@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { COMPREHENSIVE_QUIZ_BANK, ExtendedQuizQuestion } from '../data/quizBank';
 import { Language, translations } from '../data/translations';
+import { useAuth } from '../context/AuthContext';
 import {
   CheckCircle2,
   XCircle,
@@ -12,7 +13,8 @@ import {
   ArrowLeft,
   Sparkles,
   Lightbulb,
-  Check
+  Check,
+  Zap
 } from 'lucide-react';
 
 interface InteractiveQuizSystemProps {
@@ -26,6 +28,7 @@ export const InteractiveQuizSystem: React.FC<InteractiveQuizSystemProps> = ({
 }) => {
   const t = translations[lang];
   const langKey = lang === 'ar' ? 'ar' : 'en';
+  const { user, recordQuizAttempt } = useAuth();
 
   const [activeTech, setActiveTech] = useState<'all' | 'html' | 'css' | 'git' | 'github'>('all');
   const [activeDifficulty, setActiveDifficulty] = useState<'all' | 'beginner' | 'intermediate' | 'advanced'>('all');
@@ -34,6 +37,7 @@ export const InteractiveQuizSystem: React.FC<InteractiveQuizSystemProps> = ({
   const [showResults, setShowResults] = useState<boolean>(false);
   const [isTimerEnabled, setIsTimerEnabled] = useState<boolean>(false);
   const [timeLeft, setTimeLeft] = useState<number>(30);
+  const [pointAwarded, setPointAwarded] = useState<boolean>(false);
 
   const filteredQuestions = COMPREHENSIVE_QUIZ_BANK.filter((q) => {
     const matchTech = activeTech === 'all' || q.technology === activeTech;
@@ -78,6 +82,16 @@ export const InteractiveQuizSystem: React.FC<InteractiveQuizSystemProps> = ({
       ...prev,
       [questionId]: optionIdx
     }));
+
+    const isCorrect = optionIdx === currentQ?.correctIndex;
+    if (user) {
+      recordQuizAttempt(questionId, isCorrect).then((res) => {
+        if (res.earnedPoint) {
+          setPointAwarded(true);
+          setTimeout(() => setPointAwarded(false), 3500);
+        }
+      });
+    }
   };
 
   const calculateScore = () => {
@@ -108,7 +122,15 @@ export const InteractiveQuizSystem: React.FC<InteractiveQuizSystemProps> = ({
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl relative">
+      {/* Animated +1 POINT floating badge */}
+      {pointAwarded && (
+        <div className="absolute top-4 right-4 z-50 animate-bounce flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-400 text-slate-950 font-black font-mono text-xs shadow-[0_0_25px_rgba(251,191,36,0.8)] border border-yellow-200">
+          <Zap className="w-4 h-4 fill-slate-950 text-slate-950" />
+          <span>+1 POINT!</span>
+        </div>
+      )}
+
       {/* Top Filter and Controls Bar */}
       <div className="p-5 border-b border-slate-800 bg-slate-950/80 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
